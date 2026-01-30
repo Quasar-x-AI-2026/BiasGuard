@@ -20,7 +20,7 @@ export interface iSocketContext {
     chunksRef: RefObject<Map<string, Blob[]>>;
     stopRecordingById: (id: string) => void;
     openCallPopup: Boolean;
-    setOpenCallPopup:  Dispatch<SetStateAction<Boolean>>;
+    setOpenCallPopup: Dispatch<SetStateAction<Boolean>>;
 }
 
 const SocketContext = createContext<iSocketContext | null>(null)
@@ -178,7 +178,7 @@ export const SocketContextProvider = ({ children }: { children: React.ReactNode 
 
         const newCall: OngoingCall = {
             participants,
-            isRinging: false,
+            isRinging: true,
             role: "teacher"
         };
 
@@ -231,14 +231,6 @@ export const SocketContextProvider = ({ children }: { children: React.ReactNode 
 
         const handleIncomingCall = (callData: OngoingCall) => {
             setOngoingCall(callData);
-            const stream = getUserMedia(callData);
-
-            if (!stream) {
-                console.error("Failed to get local stream");
-                return;
-            }
-
-            
             setOpenCallPopup(true);
         };
 
@@ -248,6 +240,7 @@ export const SocketContextProvider = ({ children }: { children: React.ReactNode 
                 setLocalStream(null);
             }
             setOngoingCall(null);
+            setOpenCallPopup(false);
         }
 
         socket.on("call", handleIncomingCall);
