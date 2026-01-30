@@ -8,6 +8,8 @@ interface PeerContextProps {
     peer: SimplePeer.Instance | null;
     createPeer: (userToSignal: string, callerId: string, stream: MediaStream) => SimplePeer.Instance;
     addPeer: (incomingSignal: SimplePeer.SignalData, callerId: string, stream: MediaStream) => SimplePeer.Instance;
+    destroyPeer: () => void;
+    remoteVideoTracks: MediaStream[];
     connectionSignal: any; // Store pending signal if needed
 }
 
@@ -17,10 +19,12 @@ export const PeerContextProvider = ({ children }: { children: React.ReactNode })
     const { socket, ongoingCall, localStream, startRecording, stopRecordingById } = useSocket();
     const [peer, setPeer] = useState<SimplePeer.Instance | null>(null);
     // const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+    const [remoteVideoTracks, setRemoteVideoTracks] = useState<MediaStream[]>([]);
 
     const [connectionSignal, setConnectionSignal] = useState<any>(null);
 
     const peerRef = useRef<SimplePeer.Instance | null>(null);
+    const remoteAudioTrackRef = useRef<MediaStreamTrack | null>(null);
 
     useEffect(() => {
         peerRef.current = peer;
@@ -38,6 +42,60 @@ export const PeerContextProvider = ({ children }: { children: React.ReactNode })
 
         newPeer.on("signal", (signal) => {
             socket?.emit("conn-signal", { userToSignal, callerId, signal });
+        });
+
+        newPeer.on("track", (track, stream) => {
+            if (track.kind === "audio") {
+                remoteAudioTrackRef.current = track;
+                setRemoteVideoTracks((prev) => {
+                    return prev.map((s) => {
+                        if (!s.getAudioTracks().find((t) => t.id === track.id)) {
+                            s.addTrack(track);
+                        }
+                        return s;
+                    });
+                });
+            } else if (track.kind === "video") {
+                setRemoteVideoTracks((prev) => {
+                    const existing = prev.find((s) => s.getVideoTracks().some((t) => t.id === track.id));
+                    if (existing) return [...prev];
+
+                    const newStream = new MediaStream([track]);
+                    if (remoteAudioTrackRef.current) {
+                        newStream.addTrack(remoteAudioTrackRef.current);
+                    }
+                    return [...prev, newStream];
+                });
+            }
+            const handleTrackEnded = () => {
+                setRemoteVideoTracks((prev) => {
+                    return prev.filter(s => {
+                        const t = s.getVideoTracks()[0];
+                        return t && t.id !== track.id;
+                    });
+                });
+            };
+
+            track.onended = handleTrackEnded;
+            track.onmute = handleTrackEnded;
+
+            const deviceId = track.getSettings().deviceId ?? track.id;
+
+            setRemoteVideoTracks((prev) => {
+                // already have a stream for this device?
+                const existing = prev.find(s =>
+                    s.getVideoTracks()[0]?.getSettings().deviceId === deviceId
+                );
+
+                if (existing) {
+                    existing.addTrack(track);
+                    return [...prev];
+                }
+
+                const newStream = new MediaStream([track]);
+
+                return [...prev, newStream];
+            });
         });
 
 
@@ -68,6 +126,63 @@ export const PeerContextProvider = ({ children }: { children: React.ReactNode })
         });
 
 
+        newPeer.on("track", (track, stream) => {
+            if (track.kind === "audio") {
+                remoteAudioTrackRef.current = track;
+                setRemoteVideoTracks((prev) => {
+                    return prev.map((s) => {
+                        if (!s.getAudioTracks().find((t) => t.id === track.id)) {
+                            s.addTrack(track);
+                        }
+                        return s;
+                    });
+                });
+            } else if (track.kind === "video") {
+                setRemoteVideoTracks((prev) => {
+                    const existing = prev.find((s) => s.getVideoTracks().some((t) => t.id === track.id));
+                    if (existing) return [...prev];
+
+                    const newStream = new MediaStream([track]);
+                    if (remoteAudioTrackRef.current) {
+                        newStream.addTrack(remoteAudioTrackRef.current);
+                    }
+                    return [...prev, newStream];
+                });
+            }
+            const handleTrackEnded = () => {
+                setRemoteVideoTracks((prev) => {
+                    return prev.filter(s => {
+                        const t = s.getVideoTracks()[0];
+                        return t && t.id !== track.id;
+                    });
+                });
+            };
+
+            track.onended = handleTrackEnded;
+            track.onmute = handleTrackEnded;
+
+            const deviceId = track.getSettings().deviceId ?? track.id;
+
+            setRemoteVideoTracks((prev) => {
+                // already have a stream for this device?
+                const existing = prev.find(s =>
+                    s.getVideoTracks()[0]?.getSettings().deviceId === deviceId
+                );
+
+                if (existing) {
+                    existing.addTrack(track);
+                    return [...prev];
+                }
+
+                const newStream = new MediaStream([track]);
+
+                return [...prev, newStream];
+            });
+        });
+
+
+
+
 
         newPeer.on("error", (err: any) => {
             if (err?.code === 'ERR_DATA_CHANNEL' || err?.message?.includes('User-Initiated Abort') || err?.name === 'OperationError') {
@@ -80,6 +195,27 @@ export const PeerContextProvider = ({ children }: { children: React.ReactNode })
         setPeer(newPeer);
         return newPeer;
     }, [socket]);
+
+    const remoteVideoTracksRef = useRef<MediaStream[]>([]);
+
+    useEffect(() => {
+        remoteVideoTracksRef.current = remoteVideoTracks;
+    }, [remoteVideoTracks]);
+
+    const destroyPeer = useCallback(() => {
+        if (peerRef.current) {
+            peerRef.current.destroy();
+        }
+
+        remoteVideoTracksRef.current.forEach((stream) => {
+            const id = stream.getVideoTracks()[0]?.getSettings().deviceId ?? stream.id;
+            stopRecordingById(id);
+        });
+
+        setPeer(null);
+        setRemoteVideoTracks([]);
+        setConnectionSignal(null);
+    }, [stopRecordingById]);
 
     useEffect(() => {
         if (!socket) return;
@@ -109,6 +245,8 @@ export const PeerContextProvider = ({ children }: { children: React.ReactNode })
             peer,
             createPeer,
             addPeer,
+            destroyPeer,
+            remoteVideoTracks,
             connectionSignal
         }}>
             {children}
