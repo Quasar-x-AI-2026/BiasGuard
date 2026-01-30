@@ -6,11 +6,19 @@ import { createContext, RefObject, useCallback, useContext, useEffect, useRef, u
 import { io, Socket } from "socket.io-client";
 
 export interface iSocketContext {
+    localStream: MediaStream | null;
     socket: Socket | null;
     isSocketConnected: boolean;
     onlineUsers: SocketUser[] | null;
     handleCall: (user: SocketUser) => void;
     ongoingCall: OngoingCall | null;
+    handleHangup: (data: { callEndedFn?: () => void }) => void;
+    handleJoinCall: (callBack: (stream: MediaStream) => Promise<void>) => void;
+    startRecording: (stream: MediaStream, id: string) => void;
+    saveRecording: (blob: Blob, id: string) => void;
+    recordersRef: RefObject<Map<string, MediaRecorder>>;
+    chunksRef: RefObject<Map<string, Blob[]>>;
+    stopRecordingById: (id: string) => void;
 }
 
 const SocketContext = createContext<iSocketContext | null>(null)
@@ -19,6 +27,9 @@ export const SocketContextProvider = ({ children }: { children: React.ReactNode 
 
     // Media Stream State
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+
+    const recordersRef = useRef<Map<string, MediaRecorder>>(new Map());
+    const chunksRef = useRef<Map<string, Blob[]>>(new Map());
 
     const getUserMedia = useCallback(async (ongoingCall?: OngoingCall | null) => {
         if (localStream) {
@@ -91,6 +102,7 @@ export const SocketContextProvider = ({ children }: { children: React.ReactNode 
         }
     }, [localStream]);
 
+
     // Socket Setup
     const [socket, setSocket] = useState<Socket | null>(null);
     const { user } = useUser();
@@ -117,6 +129,7 @@ export const SocketContextProvider = ({ children }: { children: React.ReactNode 
 
         const handleDisconnect = () => {
             setIsSocketConnected(false);
+            handleHangup({});
         }
 
         socket.on("connect", handleConnect);
@@ -175,6 +188,39 @@ export const SocketContextProvider = ({ children }: { children: React.ReactNode 
         socket.emit("call", { participants, role: newCall.role });
     }, [socket, currentSocketUser, getUserMedia]);
 
+    const handleHangup = useCallback((data: { callEndedFn?: () => void }) => {
+        if (socket && ongoingCall) {
+            socket.emit("hangup", {
+                ongoingCallId: ongoingCall.participants.caller.userId, // Using userId as ID for simplicity if no specific ID
+                participantId: ongoingCall.participants.receiver.socketId
+            });
+        }
+
+        if (data.callEndedFn) {
+            data.callEndedFn();
+        }
+
+        if (localStream) {
+            localStream.getTracks().forEach(track => track.stop());
+            setLocalStream(null);
+        }
+
+        setOngoingCall(null);
+    }, [socket, ongoingCall, localStream]);
+
+    const handleJoinCall = useCallback(async (callBack: (stream: MediaStream) => Promise<void>) => {
+        const stream = await getUserMedia();
+
+        if (!stream) {
+            console.error("Failed to get local stream");
+            return;
+        }
+
+        setLocalStream(stream);
+
+        await callBack(stream);
+    }, [getUserMedia])
+
     // Incoming Call Listener
     useEffect(() => {
         if (!socket) return;
@@ -206,14 +252,82 @@ export const SocketContextProvider = ({ children }: { children: React.ReactNode 
         }
     }, [socket])
 
+    const startRecording = (stream: MediaStream, id: string) => {
+        if (recordersRef.current.has(id))
+            return;
+
+        console.log(`Starting recording for ${id} with tracks:`, stream.getTracks().map(t => `${t.kind}:${t.enabled}:${t.readyState}`));
+
+        chunksRef.current.set(id, []);
+
+        const supportedTypes = [
+            'video/webm;codecs=vp8,opus',
+            'video/webm;codecs=vp9,opus',
+            "video/mp4"
+        ];
+
+        const mimeType = supportedTypes.find(type => MediaRecorder.isTypeSupported(type)) || "video/mp4";
+        console.log(`Using mimeType for recording: ${mimeType}`);
+
+        const options = { mimeType };
+
+        try {
+            const recorder = new MediaRecorder(stream, options);
+
+            recorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    chunksRef.current.get(id)?.push(event.data);
+                }
+            }
+
+            recorder.onstop = () => {
+                const chunks = chunksRef.current.get(id) || [];
+                const blob = new Blob(chunks, { type: mimeType });
+                saveRecording(blob, id);
+            };
+
+            recorder.start();
+            recordersRef.current.set(id, recorder);
+        } catch (error) {
+            console.error("Failed to start recording:", error);
+        }
+    }
+
+    const saveRecording = (blob: Blob, id: string) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const extension = blob.type.split(";")[0].includes("mp4") ? "mp4" : "webm";
+        a.download = `recording_${id}_${Date.now()}.${extension}`;
+        a.click();
+        URL.revokeObjectURL(url);
+        recordersRef.current.delete(id);
+        chunksRef.current.delete(id);
+    };
+
+    const stopRecordingById = (id: string) => {
+        const recorder = recordersRef.current.get(id);
+        if (!recorder) return;
+
+        recorder.stop();
+    };
+
 
     return (
         <SocketContext.Provider value={{
+            localStream,
             socket,
             isSocketConnected,
             onlineUsers,
             handleCall,
             ongoingCall,
+            handleHangup,
+            handleJoinCall,
+            startRecording,
+            saveRecording,
+            recordersRef,
+            chunksRef,
+            stopRecordingById
         }}>
             {children}
         </SocketContext.Provider>
