@@ -1,0 +1,7 @@
+opencv-python
+numpy<1.24
+ultralytics
+mediapipe
+tensorflow==2.10.1
+keras==2.10.0
+torch
