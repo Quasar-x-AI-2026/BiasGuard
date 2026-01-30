@@ -19,11 +19,15 @@ export interface iSocketContext {
     recordersRef: RefObject<Map<string, MediaRecorder>>;
     chunksRef: RefObject<Map<string, Blob[]>>;
     stopRecordingById: (id: string) => void;
+    openCallPopup: Boolean;
+    setOpenCallPopup: (open: Boolean) => void;
 }
 
 const SocketContext = createContext<iSocketContext | null>(null)
 
 export const SocketContextProvider = ({ children }: { children: React.ReactNode }) => {
+
+    const [openCallPopup, setOpenCallPopup] = useState<Boolean>(false);
 
     // Media Stream State
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -233,6 +237,8 @@ export const SocketContextProvider = ({ children }: { children: React.ReactNode 
                 console.error("Failed to get local stream");
                 return;
             }
+
+            setOpenCallPopup(true);
         };
 
         const handleHangupIncoming = () => {
@@ -327,7 +333,9 @@ export const SocketContextProvider = ({ children }: { children: React.ReactNode 
             saveRecording,
             recordersRef,
             chunksRef,
-            stopRecordingById
+            stopRecordingById,
+            openCallPopup,
+            setOpenCallPopup,
         }}>
             {children}
         </SocketContext.Provider>
