@@ -20,7 +20,7 @@ class Video:
         self,
         process_video_input: str="sampled_videos/input_video.mp4",
         final_output_path: str="edited_videos/output.mp4",
-        cuts: List[tuple]=[(10, 20), (30, 40)]
+        cuts: List[tuple]=[(10, 20), (30, 40)]  # Example intervals for testing
     ):
         print("Cheating Intervals (in seconds):", cuts)
 
@@ -31,7 +31,7 @@ class Video:
         try:
             video = VideoFileClip(process_video_input)
             duration = video.duration
-            EPS = 0.001
+            EPS = 0.001  # 🔑 critical
 
             clips = []
             for start, end in cuts:
@@ -58,6 +58,8 @@ class Video:
                 fps=video.fps
             )
             
+
+            # Explicit cleanup to prevent WinError 6 on Windows
             final_clip.close()
             for clip in clips:
                 clip.close()

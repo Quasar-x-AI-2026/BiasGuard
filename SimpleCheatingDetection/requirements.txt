@@ -1,7 +1,13 @@
 opencv-python
-numpy<1.24
+numpy
 ultralytics
 mediapipe
-tensorflow==2.10.1
-keras==2.10.0
+tensorflow
+keras
 torch
+torchaudio
+torchvision   
+yt-dlp
+moviepy
+pydub
+streamlit

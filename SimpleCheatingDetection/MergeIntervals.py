@@ -1,8 +1,14 @@
 class MergeIntervals:
+    def comp(self, a, b):
+        if a[0] <= b[0]:
+            return True
+        return False
+
     def merge(self, intervals):
         if not intervals:
             return []
 
+        # Convert tuples → lists
         intervals = [list(interval) for interval in intervals]
 
         intervals.sort()
