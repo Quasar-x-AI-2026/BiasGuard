@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
+import { SocketContextProvider } from "@/context/SocketContext";
+import SocketProvider from "@/provier/SocketProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,13 +27,15 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
+      <SocketProvider>
         <html lang="en">
           <body
-            className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+            className={`${geistSans.variable} ${geistMono.variable} antialiased bg-black/85 text-white`}
           >
             {children}
           </body>
         </html>
+      </SocketProvider>
     </ClerkProvider>
   );
 }

@@ -6,6 +6,8 @@ const dev = process.env.NODE_ENV !== "production";
 const hostname = "localhost";
 const port = 3000;
 
+const onlineUsersOnServers = [];
+
 const app = next({ dev, hostname, port });
 const handler = app.getRequestHandler();
 
@@ -21,7 +23,31 @@ app.prepare().then(() => {
 
     socket.on("disconnect", () => {
       console.log("user disconnected");
+
+      const index = onlineUsersOnServers.findIndex(onlineUser => onlineUser.socketId === socket.id);
+      if (index !== -1) {
+        onlineUsersOnServers.splice(index, 1);
+      }
+      io.emit("get-online-users", onlineUsersOnServers);
     });
+
+    socket.on("add-new-user", (clerkUser) => {
+      if ((onlineUsersOnServers.find((onlineUser) => {
+        return onlineUser.userId === clerkUser.id
+      }))) {
+        return;
+      }
+
+      const newUser = {
+        socketId: socket.id,
+        userId: clerkUser.id,
+        profile: clerkUser
+      }
+
+      onlineUsersOnServers.push(newUser);
+      io.emit("get-online-users", onlineUsersOnServers);
+    });
+    
   });
 
   httpServer
