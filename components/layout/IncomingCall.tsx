@@ -6,7 +6,7 @@ import { usePeer } from "@/context/PeerContext";
 import { useCallback } from "react";
 
 const IncomingCall = () => {
-    const { ongoingCall, handleJoinCall, handleHangup, socket } = useSocket();
+    const { ongoingCall, handleJoinCall, handleHangup, socket, openCallPopup, setOpenCallPopup } = useSocket();
     const { createPeer } = usePeer();
 
     if (!ongoingCall) {
@@ -30,10 +30,13 @@ const IncomingCall = () => {
 
             ongoingCall.isRinging = false;
         })
+
+        setOpenCallPopup(false);
     }
 
     const handleReject = () => {
         handleHangup({});
+        setOpenCallPopup(false);
     };
 
 

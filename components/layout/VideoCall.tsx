@@ -269,6 +269,8 @@ const VideoCall = () => {
         }
     }
 
+    console.log("Local: ", localStream);
+    console.log("Remote: ", remoteVideoTracks)
 
     if (!ongoingCall) return null;
 
@@ -341,7 +343,7 @@ const VideoCall = () => {
 
             {/* Controls */}
             {ongoingCall && (
-                <div className="flex items-center gap-6 p-4 bg-gray-100 rounded-full shadow-md">
+                <div className="flex items-center gap-6 p-4 bg-gray-100 rounded-full shadow-md text-black">
                     <button onClick={toggleMic} className="p-3 rounded-full hover:bg-gray-200 transition">
                         {!isMicOn ? <MdMicOff size={28} className="text-rose-500" /> : <MdMic size={28} />}
                     </button>
