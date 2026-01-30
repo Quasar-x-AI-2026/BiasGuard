@@ -29,7 +29,7 @@ export default function RootLayout({
       <SocketProvider>
         <html lang="en">
           <body
-            className={`${geistSans.variable} ${geistMono.variable} antialiased bg-black/85 text-white`}
+            className={`${geistSans.variable} ${geistMono.variable} antialiased`}
           >
             {children}
           </body>

@@ -5,11 +5,11 @@ import { Server } from "socket.io";
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "localhost";
 const port = 3000;
-
-const onlineUsersOnServers = [];
-
+// when using middleware `hostname` and `port` must be provided below
 const app = next({ dev, hostname, port });
 const handler = app.getRequestHandler();
+
+const onlineUsersOnServers = [];
 
 app.prepare().then(() => {
   const httpServer = createServer(handler);
@@ -23,7 +23,6 @@ app.prepare().then(() => {
 
     socket.on("disconnect", () => {
       console.log("user disconnected");
-
       const index = onlineUsersOnServers.findIndex(onlineUser => onlineUser.socketId === socket.id);
       if (index !== -1) {
         onlineUsersOnServers.splice(index, 1);
@@ -46,7 +45,7 @@ app.prepare().then(() => {
 
       onlineUsersOnServers.push(newUser);
       io.emit("get-online-users", onlineUsersOnServers);
-    });
+    })
 
     socket.on("call", callData => {
       const { participants, role } = callData;
@@ -57,7 +56,18 @@ app.prepare().then(() => {
         role: role==="teacher"?"student":"teacher",
       })
     })
-    
+
+    socket.on("conn-signal", (data) => {
+      const { userToSignal, signal, callerId } = data;
+      io.to(userToSignal).emit("conn-signal", { signal, callerId });
+    });
+
+    socket.on("hangup", (data) => {
+      if (data.participantId) {
+        io.to(data.participantId).emit("hangup");
+      }
+    });
+
   });
 
   httpServer

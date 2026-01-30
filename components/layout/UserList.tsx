@@ -13,7 +13,7 @@ const UsersList = () => {
     }
 
     return (
-        <div className="m-5 p-5">
+        <div className="m-5 p-5 border-b-2 flex items-center gap-4">
             {(socket && isSocketConnected && onlineUsers) && onlineUsers.filter(u => u.userId !== user.id).map(u => {
                 return <div key={u.socketId} onClick={() => handleCall(u)} className="flex flex-col items-center cursor-pointer hover:bg-gray-200 p-2 rounded-lg">
                     {u.profile.imageUrl && u.profile.fullName &&

@@ -15,4 +15,4 @@ export type OngoingCall = {
 export type Participants = {
     caller: SocketUser;
     receiver: SocketUser;
-};
+}
