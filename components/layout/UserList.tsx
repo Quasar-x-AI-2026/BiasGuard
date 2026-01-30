@@ -5,7 +5,7 @@ import { useUser } from "@clerk/nextjs";
 import Image from "next/image";
 
 const UsersList = () => {
-    const { socket, isSocketConnected, onlineUsers } = useSocket();
+    const { socket, isSocketConnected, onlineUsers, handleCall } = useSocket();
     const { user, isLoaded } = useUser();
 
     if (!isLoaded || !user) {
@@ -15,7 +15,7 @@ const UsersList = () => {
     return (
         <div className="m-5 p-5">
             {(socket && isSocketConnected && onlineUsers) && onlineUsers.filter(u => u.userId !== user.id).map(u => {
-                return <div key={u.socketId} className="flex flex-col items-center cursor-pointer hover:bg-gray-200 p-2 rounded-lg">
+                return <div key={u.socketId} onClick={() => handleCall(u)} className="flex flex-col items-center cursor-pointer hover:bg-gray-200 p-2 rounded-lg">
                     {u.profile.imageUrl && u.profile.fullName &&
                         <Image
                             src={u.profile.imageUrl}

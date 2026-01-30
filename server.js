@@ -47,6 +47,16 @@ app.prepare().then(() => {
       onlineUsersOnServers.push(newUser);
       io.emit("get-online-users", onlineUsersOnServers);
     });
+
+    socket.on("call", callData => {
+      const { participants, role } = callData;
+
+      io.to(participants.receiver.socketId).emit("call", {
+        participants,
+        isRinging: true,
+        role: role==="teacher"?"student":"teacher",
+      })
+    })
     
   });
 
