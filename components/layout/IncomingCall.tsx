@@ -49,7 +49,7 @@ const IncomingCall = () => {
         <h2 className="text-black font-semibold text-lg mb-3 text-center">Incoming Call</h2>
         <div className="flex gap-4">
           <Button className="cursor-pointer" onClick={handleAccept}>Accept</Button>
-        <Button className="cursor-pointer" onClick={handleReject}>Reject</Button>
+          <Button className="cursor-pointer" onClick={handleReject}>Reject</Button>
         </div>
       </div>}
     </>

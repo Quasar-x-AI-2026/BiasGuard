@@ -9,10 +9,10 @@ const Navbar = () => {
     const { isSignedIn } = useAuth()
     const router = useRouter()
     return (
-        <div className="sticky top-0 p-5 flex justify-between border-b-2 w-full bg-gray-300 items-center text-black">
+        <div className="sticky top-0 p-5 flex justify-between border-b-2 w-full bg-gray-400 items-center text-black">
             <div className="flex">
                 {/* <VideoIcon /> */}
-                <span className="font-bold text-xl">VidChat</span>
+                <span className="font-bold text-2xl">ClearHire</span>
             </div>
             {isSignedIn ? <UserButton /> : (
                 <div>
