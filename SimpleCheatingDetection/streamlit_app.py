@@ -1,5 +1,6 @@
 
 import streamlit as st
+import pandas as pd
 import os
 import time
 from ProcessCheating import ProcessCheating
@@ -192,8 +193,13 @@ if st.button("Process Video"):
                 s_path = save_uploaded_file(student_video_file)
                 s_pov_path = save_uploaded_file(student_video_pov_file)
                 
+                results_data = {}
                 def status_update(msg):
-                    st.write(msg)
+                    if isinstance(msg, list):
+                        results_data['ratings'] = msg
+                        st.write("Interview Rated.")
+                    else:
+                        st.write(msg)
                 
                 # Instantiate ProcessCheating
                 processor = ProcessCheating(
@@ -212,6 +218,13 @@ if st.button("Process Video"):
                 
             st.success("Processing Complete!")
             st.info("Check 'final_videos' folder for results if not displayed below.")
+
+            if 'ratings' in results_data and results_data['ratings']:
+                st.subheader("Interview Ratings")
+                df = pd.DataFrame(results_data['ratings'])
+                # Rename columns to match user request (replace underscores with spaces)
+                df.columns = [col.replace('_', ' ') for col in df.columns]
+                st.dataframe(df, use_container_width=True)
             
             # Try to find the latest files in final_videos
             if os.path.exists("final_videos"):

@@ -3,6 +3,7 @@ from EditVideo import Video
 from SimpleCheatingDetector import SimpleCheatingDetector
 import os
 import time
+from OpenAI_Rating import InterviewRater
 
 
 def remove_non_empty_dir(path):
@@ -51,6 +52,10 @@ class ProcessCheating:
         
         notify("Overlaying combined audio...")
         combined_audio_path = Audio().overlay_audio(teacher_audio_path, student_audio_path)
+
+        rater = InterviewRater()
+        results = rater.rate_interview(combined_audio_path, "Software Engineer")
+        notify(results)
         
         notify("Muting videos for processing...")
         teacher_video_path = Video().mute_audio(self.teacher_audio_video_path)
