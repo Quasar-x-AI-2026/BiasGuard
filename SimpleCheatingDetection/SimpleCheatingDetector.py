@@ -7,12 +7,12 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from tensorflow.keras.models import load_model
+from MergeIntervals import MergeIntervals
 import uuid
 import torch
 import tensorflow as tf
 
 
-# Constants
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_2_PATH = os.path.join(BASE_DIR, "models", "modelv8-2.pt")
 EYE_MODEL_PATH = os.path.join(BASE_DIR, "models", "eye_modelv3.h5")
@@ -20,12 +20,18 @@ FACE_LANDMARKER_PATH = os.path.join(BASE_DIR, "models", "face_landmarker.task")
 IMG_SIZE = (56, 64)
 CLASS_LABELS = ['center', 'left', 'right']
 
+
 class SimpleCheatingDetector:
-    def __init__(self, eye_closure_threshold=0.009, closed_eye_cheat_time=4.0):
-        print("Initializing models...")
-        
+    def __init__(self, eye_closure_threshold=0.009, closed_eye_cheat_time=4.0, skip_frames=6):
         self.eye_closure_threshold = eye_closure_threshold
         self.closed_eye_cheat_time = closed_eye_cheat_time
+        self.skip_frames = skip_frames
+        self.device = 0 if torch.cuda.is_available() else 'cpu'
+
+        gpus = tf.config.list_physical_devices('GPU')
+        if gpus:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
 
         self.yolo_model = YOLO(MODEL_2_PATH)
         self.eye_model = load_model(EYE_MODEL_PATH)
@@ -45,7 +51,7 @@ class SimpleCheatingDetector:
 
         self.closed_eye_start_time = None
         self.closed_eye_frames = []
-        
+
         self.last_face_box = None
         self.last_left_eye_box = None
         self.last_right_eye_box = None
@@ -54,12 +60,11 @@ class SimpleCheatingDetector:
             "cheating": (0, 0, 255),
             "normal": (0, 255, 0),
             "warning": (0, 165, 255),
-            "down": (128, 128, 128)
+            "closed": (128, 128, 128)
         }
 
         self.video_duration = 0
         self.fps = 0
-        self.skip_frames = 1
 
     def _init_mediapipe(self):
         base_options = python.BaseOptions(model_asset_path=FACE_LANDMARKER_PATH)
@@ -81,7 +86,7 @@ class SimpleCheatingDetector:
             upper_idx, lower_idx = 386, 374
 
         eye_height = abs(landmarks[upper_idx].y - landmarks[lower_idx].y)
-        
+
         eye_points_pixel = np.array(
             [[int(landmarks[i].x * w), int(landmarks[i].y * h)] for i in indices],
             dtype=np.int64
@@ -89,27 +94,26 @@ class SimpleCheatingDetector:
 
         x1, y1 = np.min(eye_points_pixel, axis=0)
         x2, y2 = np.max(eye_points_pixel, axis=0)
-        
+
         x1, y1 = max(0, x1), max(0, y1)
         x2, y2 = min(w, x2), min(h, y2)
-        
+
         bbox = (x1, y1, x2, y2)
 
         if eye_height < self.eye_closure_threshold:
-            return None, "down", bbox
+            return None, "closed", bbox
 
         eye_img = gray_frame[y1:y2, x1:x2]
 
         if eye_img.size == 0:
-            return None, "down", bbox
-            
+            return None, "closed", bbox
+
         return eye_img, "open", bbox
 
-    def process_video(self, input_path: str):
+    def process_video(self, input_path):
         random_id = str(uuid.uuid4())
         output_path = f"extracted_videos/{random_id}_processed_video.mp4"
-        
-        
+
         cap = cv2.VideoCapture(input_path)
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -129,8 +133,8 @@ class SimpleCheatingDetector:
 
         last_left_dir = "center"
         last_right_dir = "center"
-        
-        print(f"Processing video: {total_frames} frames @ {fps} fps")
+
+        start_process_time = time.time()
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -141,24 +145,20 @@ class SimpleCheatingDetector:
             current_video_time = frame_count / fps
             self.video_duration = current_video_time
 
-            should_process = (frame_count % self.skip_frames == 0)
-
-            if should_process:
+            if frame_count % self.skip_frames == 0:
                 results = self.yolo_model(frame, verbose=False, device=self.device)[0]
                 has_head_tilt = False
                 self.last_face_box = None
-                
+
                 for box in results.boxes:
                     cls = int(box.cls[0])
                     class_name = self.yolo_model.names[cls]
-                    
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
                     self.last_face_box = (x1, y1, x2, y2, class_name)
-                    
                     if class_name == "cheating":
                         has_head_tilt = True
                         break
-                
+
                 if has_head_tilt:
                     self.cheating_detected_head_tilt = True
                     head_tilt_ls.append(frame_count)
@@ -172,10 +172,8 @@ class SimpleCheatingDetector:
                         head_tilt_ls = []
                         self.cheating_detected_head_tilt = False
 
-                # ---------------- EYE TRACKING ----------------
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
-                
                 frame_timestamp_ms = int((frame_count * 1000) / fps)
                 detection = self.face_landmarker.detect_for_video(
                     mp_image, frame_timestamp_ms
@@ -183,51 +181,44 @@ class SimpleCheatingDetector:
 
                 left_dir = last_left_dir
                 right_dir = last_right_dir
-                
+
                 if not detection.face_landmarks:
                     self.last_left_eye_box = None
                     self.last_right_eye_box = None
-                
+
                 if detection.face_landmarks:
                     landmarks = detection.face_landmarks[0]
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-                    eyes_to_process = [] 
+                    eyes_to_process = []
                     eye_indices_map = []
 
-                    # Left Eye
                     l_img, l_status, l_bbox = self._get_eye_image(gray, landmarks, [33, 133, 159, 145])
                     self.last_left_eye_box = l_bbox
-                    
-                    if l_status == "down":
-                        left_dir = "down"
+                    if l_status == "closed":
+                        left_dir = "closed"
                     else:
                         eyes_to_process.append(l_img)
                         eye_indices_map.append(0)
 
-                    # Right Eye
                     r_img, r_status, r_bbox = self._get_eye_image(gray, landmarks, [362, 263, 386, 374])
                     self.last_right_eye_box = r_bbox
-                    
-                    if r_status == "down":
-                        right_dir = "down"
+                    if r_status == "closed":
+                        right_dir = "closed"
                     else:
                         eyes_to_process.append(r_img)
                         eye_indices_map.append(1)
 
-                    # Batch Predict
                     if eyes_to_process:
                         batch = []
                         for img in eyes_to_process:
                             processed = cv2.resize(img, (IMG_SIZE[1], IMG_SIZE[0]))
                             processed = processed / 255.0
                             batch.append(processed)
-                        
+
                         batch_np = np.array(batch, dtype=np.float32)
                         batch_np = batch_np.reshape((len(batch), *IMG_SIZE, 1))
-                        
                         preds = self.eye_model(batch_np, training=False).numpy()
-                        
+
                         for i, list_idx in enumerate(eye_indices_map):
                             pred_idx = np.argmax(preds[i])
                             direction = CLASS_LABELS[pred_idx]
@@ -238,8 +229,8 @@ class SimpleCheatingDetector:
 
                     last_left_dir = left_dir
                     last_right_dir = right_dir
-                    
-                if left_dir == "down" and right_dir == "down":
+
+                if left_dir == "closed" and right_dir == "closed":
                     if self.closed_eye_start_time is None:
                         self.closed_eye_start_time = current_video_time
                         self.closed_eye_frames = [frame_count]
@@ -258,7 +249,7 @@ class SimpleCheatingDetector:
                     self.cheating_detected_eye_tilt = False
 
                 is_looking_away = (left_dir in ["left", "right"]) or (right_dir in ["left", "right"])
-                
+
                 if is_looking_away:
                     self.gaze_frames.append(frame_count)
                 else:
@@ -270,28 +261,6 @@ class SimpleCheatingDetector:
                             )
                         self.gaze_frames = []
 
-            # --------------- Drawing ---------------
-            if self.last_face_box:
-                x1, y1, x2, y2, cls_name = self.last_face_box
-                color = self.colors.get(cls_name, self.colors["normal"])
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(frame, cls_name, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
-
-            for bbox, status, label in [(self.last_left_eye_box, last_left_dir, "L"), (self.last_right_eye_box, last_right_dir, "R")]:
-                if bbox:
-                    ex1, ey1, ex2, ey2 = bbox
-                    color = self.colors["down"] if status == "down" else self.colors["normal"]
-                    if status != "center" and status != "down":
-                         color = self.colors["warning"]
-                    
-                    cv2.rectangle(frame, (ex1, ey1), (ex2, ey2), color, 1)
-                    cv2.putText(frame, f"{label}:{status}", (ex1, ey1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-
-            if frame_count % 30 == 0:
-                elapsed = time.time() - start_process_time
-                fps_proc = frame_count / (elapsed + 1e-9)
-                print(f"Frame {frame_count}/{total_frames} | Speed: {fps_proc:.2f} fps", end='\r')
-
             out.write(frame)
 
         if self.cheating_detected_head_tilt and head_tilt_ls:
@@ -302,24 +271,22 @@ class SimpleCheatingDetector:
                 )
 
         if self.cheating_detected_eye_tilt and self.closed_eye_frames:
-             duration = (max(self.closed_eye_frames) - min(self.closed_eye_frames)) / fps
-             if duration >= self.closed_eye_cheat_time:
-                 self.cheating_frame_list_eye_tilt.append(
+            duration = (max(self.closed_eye_frames) - min(self.closed_eye_frames)) / fps
+            if duration >= self.closed_eye_cheat_time:
+                self.cheating_frame_list_eye_tilt.append(
                     (min(self.closed_eye_frames), max(self.closed_eye_frames))
                 )
 
         if self.gaze_frames:
-             duration = (max(self.gaze_frames) - min(self.gaze_frames)) / fps
-             if duration >= self.closed_eye_cheat_time:
-                 self.cheating_frame_list_gaze.append(
+            duration = (max(self.gaze_frames) - min(self.gaze_frames)) / fps
+            if duration >= self.closed_eye_cheat_time:
+                self.cheating_frame_list_gaze.append(
                     (min(self.gaze_frames), max(self.gaze_frames))
                 )
 
         cap.release()
         out.release()
-        total_time = time.time() - start_process_time
-        print(f"\nProcessed {frame_count} frames in {total_time:.2f}s ({frame_count/total_time:.2f} fps)")
-        
+
         return output_path
 
     def get_cheating_intervals(self):
@@ -328,8 +295,8 @@ class SimpleCheatingDetector:
             return intervals
 
         all_intervals = (
-            self.cheating_frame_list_head_tilt + 
-            self.cheating_frame_list_eye_tilt + 
+            self.cheating_frame_list_head_tilt +
+            self.cheating_frame_list_eye_tilt +
             self.cheating_frame_list_gaze
         )
 
@@ -342,7 +309,13 @@ class SimpleCheatingDetector:
 
         return MergeIntervals().merge(intervals)
 
-if __name__ == "__main__":
+
+def main():
     detector = SimpleCheatingDetector()
-    detector.process_video(input_str)
+    output_path = detector.process_video("sampled_videos/input_video.mp4")
+    print("Processed video saved at:", output_path)
     print("Merged Cheating Intervals:", detector.get_cheating_intervals())
+
+
+if __name__ == "__main__":
+    main()
